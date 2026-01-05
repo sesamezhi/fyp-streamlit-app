@@ -155,7 +155,7 @@ if st.button("Analyze Review") and user_input.strip():
     # =====================================================
     # EXPLAINABILITY
     # =====================================================
-    st.subheader("🧠 Why was this prediction made?")
+    st.subheader("🧠 Indicative Words in the Review")
 
     tokens = tokenizer.tokenize(user_input.lower())
     keywords = [t.replace("##", "") for t in tokens if t.isalpha()]
