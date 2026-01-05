@@ -1,13 +1,15 @@
 # =========================================================
 # Streamlit App — Review Sentiment & Type Analysis
-# Uses Model 4B (Binary BERT, Imbalanced Dataset)
-# FIXED WordCloud Rendering
+# Binary & 3-Class Sentiment (Imbalanced BERT)
+# Split Probability Charts + 6 Word Clouds
+# Simple Explainability (Indicative Words)
 # =========================================================
 
 import streamlit as st
 import torch
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 from transformers import BertTokenizerFast, BertForSequenceClassification
 from wordcloud import WordCloud
@@ -15,54 +17,63 @@ from wordcloud import WordCloud
 # -------------------------
 # Page Config
 # -------------------------
-st.set_page_config(
-    page_title="Review Analysis Dashboard",
-    layout="wide"
-)
+st.set_page_config(page_title="Review Analysis Dashboard", layout="wide")
 
 st.title("📊 Review Sentiment & Type Analysis Dashboard")
-st.write("Binary Sentiment + Review Type Prediction using BERT")
+st.write("Sentiment & Review Type Prediction using BERT")
 
 # -------------------------
-# Load Models & Tokenizer
+# Sidebar — Model Selection
+# -------------------------
+st.sidebar.header("⚙️ Model Settings")
+
+sentiment_mode = st.sidebar.radio(
+    "Select Sentiment Model",
+    ["Binary (Positive / Negative)", "3-Class (Negative / Neutral / Positive)"]
+)
+
+show_wordclouds = st.sidebar.checkbox("Show Word Clouds", value=True)
+
+# -------------------------
+# Load Models
 # -------------------------
 @st.cache_resource
-def load_models():
-    sentiment_model = BertForSequenceClassification.from_pretrained(
-        "bert_imbalanced_sentiment_binary"
-    )
+def load_models(mode):
+    if mode.startswith("Binary"):
+        sentiment_repo = "limdaozhi/bert-imbalanced-sentiment-binary"
+        sent_labels = ["Negative", "Positive"]
+    else:
+        sentiment_repo = "limdaozhi/bert-imbalanced-sentiment-3class"
+        sent_labels = ["Negative", "Neutral", "Positive"]
+
+    sentiment_model = BertForSequenceClassification.from_pretrained(sentiment_repo)
     type_model = BertForSequenceClassification.from_pretrained(
-        "bert_review_type_model"
+        "limdaozhi/bert-review-type-model"
     )
-    tokenizer = BertTokenizerFast.from_pretrained(
-        "bert_imbalanced_sentiment_binary"
-    )
-    return sentiment_model, type_model, tokenizer
+    tokenizer = BertTokenizerFast.from_pretrained(sentiment_repo)
 
-sentiment_model, type_model, tokenizer = load_models()
+    return sentiment_model, type_model, tokenizer, sent_labels
 
-sentiment_model.eval()
-type_model.eval()
+
+try:
+    sentiment_model, type_model, tokenizer, sent_labels = load_models(sentiment_mode)
+    sentiment_model.eval()
+    type_model.eval()
+except Exception as e:
+    st.error("❌ Failed to load models.")
+    st.exception(e)
+    st.stop()
 
 # -------------------------
-# Load Dataset for Dashboard
+# Load Dataset
 # -------------------------
 df = pd.read_csv("imbalance_reviews.csv")
 
 # -------------------------
-# Sidebar
-# -------------------------
-st.sidebar.header("📌 Options")
-show_wordclouds = st.sidebar.checkbox("Show Word Clouds", value=True)
-
-# -------------------------
-# User Input Section
+# User Input
 # -------------------------
 st.subheader("📝 Enter a Review")
-user_input = st.text_area(
-    "Type or paste a review below:",
-    height=120
-)
+user_input = st.text_area("Type or paste a review below:", height=120)
 
 if st.button("Analyze Review") and user_input.strip():
 
@@ -79,48 +90,116 @@ if st.button("Analyze Review") and user_input.strip():
         type_logits = type_model(**inputs).logits
 
     # -------------------------
-    # Sentiment Prediction
+    # Predictions
     # -------------------------
-    sent_probs = torch.softmax(sent_logits, dim=1)[0]
-    sent_labels = ["Negative", "Positive"]
+    sent_probs = torch.softmax(sent_logits, dim=1)[0].numpy()
+    type_probs = torch.softmax(type_logits, dim=1)[0].numpy()
 
-    sentiment = sent_labels[torch.argmax(sent_probs).item()]
-    sentiment_conf = torch.max(sent_probs).item()
+    sentiment = sent_labels[int(np.argmax(sent_probs))]
+    sentiment_conf = sent_probs.max() * 100
 
-    # -------------------------
-    # Review Type Prediction
-    # -------------------------
-    type_probs = torch.softmax(type_logits, dim=1)[0]
     type_labels = ["Apps", "Products", "Services"]
-
-    review_type = type_labels[torch.argmax(type_probs).item()]
+    review_type = type_labels[int(np.argmax(type_probs))]
 
     # -------------------------
-    # Display Results
+    # Results Display
     # -------------------------
     st.subheader("🔍 Prediction Results")
-
     col1, col2 = st.columns(2)
 
     with col1:
         st.metric("Sentiment", sentiment)
-        st.progress(sentiment_conf)
-        st.write(f"Confidence: **{sentiment_conf:.2f}**")
+        st.progress(float(sentiment_conf / 100))
+        st.write(f"Confidence: **{sentiment_conf:.2f}%**")
 
     with col2:
         st.metric("Predicted Review Type", review_type)
 
+    # =====================================================
+    # PREDICTION PROBABILITIES — PIE CHARTS
+    # =====================================================
     st.subheader("📈 Prediction Probabilities")
 
-    prob_df = pd.DataFrame({
-        "Class": sent_labels + type_labels,
-        "Probability": list(sent_probs.numpy()) + list(type_probs.numpy())
-    })
+    colA, colB = st.columns(2)
 
-    st.bar_chart(prob_df.set_index("Class"))
+    # -------- Sentiment Pie Chart --------
+    with colA:
+        explode = [
+            0.1 if i == np.argmax(sent_probs) else 0
+            for i in range(len(sent_probs))
+        ]
+
+        fig, ax = plt.subplots()
+        ax.pie(
+            sent_probs,
+            labels=sent_labels,
+            autopct="%.1f%%",
+            startangle=90,
+            explode=explode
+        )
+        ax.set_title("Sentiment Probability Distribution")
+        ax.axis("equal")
+        st.pyplot(fig)
+
+
+    # -------- Review Type Pie Chart --------
+    with colB:
+        explode = [
+            0.1 if i == np.argmax(type_probs) else 0
+            for i in range(len(type_probs))
+        ]
+
+        fig, ax = plt.subplots()
+        ax.pie(
+            type_probs,
+            labels=type_labels,
+            autopct="%.1f%%",
+            startangle=90,
+            explode=explode
+        )
+        ax.set_title("Review Type Probability Distribution")
+        ax.axis("equal")
+        st.pyplot(fig)
+
+    # =====================================================
+    # EXPLAINABILITY — WHY THIS PREDICTION
+    # =====================================================
+    st.subheader("🧠 Why was this prediction made?")
+
+    tokens = tokenizer.tokenize(user_input.lower())
+    keywords = [t.replace("##", "") for t in tokens if t.isalpha()]
+
+    # Split keywords roughly (simple, explainable heuristic)
+    sentiment_keywords = keywords[:10]
+    type_keywords = keywords[10:18]
+
+    # -------- Sentiment Explanation --------
+    st.markdown(f"**Why is this a _{sentiment.lower()}_ review?**")
+
+    if sentiment_keywords:
+        st.write(
+            "The following words in the review likely contributed to the "
+            f"**{sentiment.lower()} sentiment prediction**:"
+        )
+        st.write(", ".join(sentiment_keywords))
+    else:
+        st.write("No strong sentiment-indicative words were detected.")
+
+    # -------- Review Type Explanation --------
+    st.markdown(f"**Why is this a _{review_type.lower()}_ review?**")
+
+    if type_keywords:
+        st.write(
+            "The following words in the review likely contributed to the "
+            f"**{review_type.lower()} category prediction**:"
+        )
+        st.write(", ".join(type_keywords))
+    else:
+        st.write("No strong review-type-indicative words were detected.")
+
 
 # =========================================================
-# WORD CLOUD DASHBOARD (FIXED)
+# WORD CLOUD DASHBOARD (ALWAYS 6 CLOUDS)
 # =========================================================
 if show_wordclouds:
 
@@ -128,54 +207,45 @@ if show_wordclouds:
 
     def generate_wordcloud(text, title):
         if not isinstance(text, str) or not text.strip():
-            st.write(f"No data available for {title}")
+            st.write(f"No data for {title}")
             return
-
-        wc = WordCloud(
-            width=400,
-            height=300,
-            background_color="white",
-            max_words=100
-        ).generate(text)
-
+        wc = WordCloud(width=400, height=300, background_color="white").generate(text)
         fig, ax = plt.subplots()
-        ax.imshow(wc.to_array())   # ✅ FIXED
+        ax.imshow(np.array(wc.to_image()))
         ax.axis("off")
         ax.set_title(title)
         st.pyplot(fig)
 
+    # -------- Sentiment Word Clouds --------
+    st.markdown("### 🧭 Sentiment Word Clouds")
     col1, col2, col3 = st.columns(3)
 
-    # -------------------------
-    # Sentiment Word Clouds
-    # -------------------------
     with col1:
-        neg_text = " ".join(
-            df[df["sentiment"].isin(["negative", "very negative"])]["cleaned_text"]
-        )
-        generate_wordcloud(neg_text, "Negative Reviews")
+        neg_text = " ".join(df[df["sentiment"].isin(["negative", "very negative"])]["cleaned_text"])
+        generate_wordcloud(neg_text, "Negative")
 
     with col2:
-        pos_text = " ".join(
-            df[df["sentiment"].isin(["positive", "very positive"])]["cleaned_text"]
-        )
-        generate_wordcloud(pos_text, "Positive Reviews")
+        neu_text = " ".join(df[df["sentiment"] == "neutral"]["cleaned_text"])
+        generate_wordcloud(neu_text, "Neutral")
 
-    # -------------------------
-    # Review Type Word Clouds
-    # -------------------------
     with col3:
-        app_text = " ".join(df[df["rev_type"] == "apps"]["cleaned_text"])
-        generate_wordcloud(app_text, "App Reviews")
+        pos_text = " ".join(df[df["sentiment"].isin(["positive", "very positive"])]["cleaned_text"])
+        generate_wordcloud(pos_text, "Positive")
 
-    col4, col5 = st.columns(2)
+    # -------- Review Type Word Clouds --------
+    st.markdown("### ✍️ Review Type Word Clouds")
+    col4, col5, col6 = st.columns(3)
 
     with col4:
-        prod_text = " ".join(df[df["rev_type"] == "products"]["cleaned_text"])
-        generate_wordcloud(prod_text, "Product Reviews")
+        app_text = " ".join(df[df["rev_type"] == "apps"]["cleaned_text"])
+        generate_wordcloud(app_text, "Apps")
 
     with col5:
-        serv_text = " ".join(df[df["rev_type"] == "services"]["cleaned_text"])
-        generate_wordcloud(serv_text, "Service Reviews")
+        prod_text = " ".join(df[df["rev_type"] == "products"]["cleaned_text"])
+        generate_wordcloud(prod_text, "Products")
 
-st.success("✅ Model 4B Deployed Successfully")
+    with col6:
+        serv_text = " ".join(df[df["rev_type"] == "services"]["cleaned_text"])
+        generate_wordcloud(serv_text, "Services")
+
+st.success("✅ Sentiment Analysis System Ready")
