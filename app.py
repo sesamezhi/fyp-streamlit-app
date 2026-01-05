@@ -20,7 +20,19 @@ from wordcloud import WordCloud
 st.set_page_config(page_title="Review Analysis Dashboard", layout="wide")
 
 st.title("📊 Review Sentiment & Type Analysis Dashboard")
-st.write("Sentiment & Review Type Prediction using BERT")
+st.caption("Final Year Project by **Lim Dao Zhi (TP074115)**")
+
+st.write(
+    """
+    This application analyses customer reviews using **BERT-based deep learning models**
+    to predict:
+    - **Sentiment** (Binary or 3-Class)
+    - **Review Type** (Apps, Products, Services)
+
+    The system is trained on **51,718 reviews aggregated from Amazon, Google Play Store,
+    and Yelp**, covering multiple domains and review styles.
+    """
+)
 
 # -------------------------
 # Sidebar — Model Selection
@@ -122,84 +134,43 @@ if st.button("Analyze Review") and user_input.strip():
 
     colA, colB = st.columns(2)
 
-    # -------- Sentiment Pie Chart --------
     with colA:
-        explode = [
-            0.1 if i == np.argmax(sent_probs) else 0
-            for i in range(len(sent_probs))
-        ]
-
+        explode = [0.1 if i == np.argmax(sent_probs) else 0 for i in range(len(sent_probs))]
         fig, ax = plt.subplots()
-        ax.pie(
-            sent_probs,
-            labels=sent_labels,
-            autopct="%.1f%%",
-            startangle=90,
-            explode=explode
-        )
+        ax.pie(sent_probs, labels=sent_labels, autopct="%.1f%%",
+               startangle=90, explode=explode)
         ax.set_title("Sentiment Probability Distribution")
         ax.axis("equal")
         st.pyplot(fig)
 
-
-    # -------- Review Type Pie Chart --------
     with colB:
-        explode = [
-            0.1 if i == np.argmax(type_probs) else 0
-            for i in range(len(type_probs))
-        ]
-
+        explode = [0.1 if i == np.argmax(type_probs) else 0 for i in range(len(type_probs))]
         fig, ax = plt.subplots()
-        ax.pie(
-            type_probs,
-            labels=type_labels,
-            autopct="%.1f%%",
-            startangle=90,
-            explode=explode
-        )
+        ax.pie(type_probs, labels=type_labels, autopct="%.1f%%",
+               startangle=90, explode=explode)
         ax.set_title("Review Type Probability Distribution")
         ax.axis("equal")
         st.pyplot(fig)
 
     # =====================================================
-    # EXPLAINABILITY — WHY THIS PREDICTION
+    # EXPLAINABILITY
     # =====================================================
     st.subheader("🧠 Why was this prediction made?")
 
     tokens = tokenizer.tokenize(user_input.lower())
     keywords = [t.replace("##", "") for t in tokens if t.isalpha()]
 
-    # Split keywords roughly (simple, explainable heuristic)
     sentiment_keywords = keywords[:10]
     type_keywords = keywords[10:18]
 
-    # -------- Sentiment Explanation --------
     st.markdown(f"**Why is this a _{sentiment.lower()}_ review?**")
+    st.write(", ".join(sentiment_keywords) if sentiment_keywords else "No strong indicators detected.")
 
-    if sentiment_keywords:
-        st.write(
-            "The following words in the review likely contributed to the "
-            f"**{sentiment.lower()} sentiment prediction**:"
-        )
-        st.write(", ".join(sentiment_keywords))
-    else:
-        st.write("No strong sentiment-indicative words were detected.")
-
-    # -------- Review Type Explanation --------
     st.markdown(f"**Why is this a _{review_type.lower()}_ review?**")
-
-    if type_keywords:
-        st.write(
-            "The following words in the review likely contributed to the "
-            f"**{review_type.lower()} category prediction**:"
-        )
-        st.write(", ".join(type_keywords))
-    else:
-        st.write("No strong review-type-indicative words were detected.")
-
+    st.write(", ".join(type_keywords) if type_keywords else "No strong indicators detected.")
 
 # =========================================================
-# WORD CLOUD DASHBOARD (ALWAYS 6 CLOUDS)
+# WORD CLOUD DASHBOARD
 # =========================================================
 if show_wordclouds:
 
@@ -216,36 +187,50 @@ if show_wordclouds:
         ax.set_title(title)
         st.pyplot(fig)
 
-    # -------- Sentiment Word Clouds --------
     st.markdown("### 🧭 Sentiment Word Clouds")
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        neg_text = " ".join(df[df["sentiment"].isin(["negative", "very negative"])]["cleaned_text"])
-        generate_wordcloud(neg_text, "Negative")
-
+        generate_wordcloud(" ".join(df[df["sentiment"].isin(["negative","very negative"])]["cleaned_text"]), "Negative")
     with col2:
-        neu_text = " ".join(df[df["sentiment"] == "neutral"]["cleaned_text"])
-        generate_wordcloud(neu_text, "Neutral")
-
+        generate_wordcloud(" ".join(df[df["sentiment"]=="neutral"]["cleaned_text"]), "Neutral")
     with col3:
-        pos_text = " ".join(df[df["sentiment"].isin(["positive", "very positive"])]["cleaned_text"])
-        generate_wordcloud(pos_text, "Positive")
+        generate_wordcloud(" ".join(df[df["sentiment"].isin(["positive","very positive"])]["cleaned_text"]), "Positive")
 
-    # -------- Review Type Word Clouds --------
     st.markdown("### ✍️ Review Type Word Clouds")
     col4, col5, col6 = st.columns(3)
 
     with col4:
-        app_text = " ".join(df[df["rev_type"] == "apps"]["cleaned_text"])
-        generate_wordcloud(app_text, "Apps")
-
+        generate_wordcloud(" ".join(df[df["rev_type"]=="apps"]["cleaned_text"]), "Apps")
     with col5:
-        prod_text = " ".join(df[df["rev_type"] == "products"]["cleaned_text"])
-        generate_wordcloud(prod_text, "Products")
-
+        generate_wordcloud(" ".join(df[df["rev_type"]=="products"]["cleaned_text"]), "Products")
     with col6:
-        serv_text = " ".join(df[df["rev_type"] == "services"]["cleaned_text"])
-        generate_wordcloud(serv_text, "Services")
+        generate_wordcloud(" ".join(df[df["rev_type"]=="services"]["cleaned_text"]), "Services")
+
+# =========================================================
+# DATASET CREDITS
+# =========================================================
+st.markdown("---")
+st.subheader("📚 Dataset Sources & Credits")
+
+st.markdown(
+    """
+All datasets used in this project were sourced from **Kaggle.com** and merged
+to form a unified review corpus for analysis.
+
+**Dataset Sources:**
+- **Amazon Reviews Dataset**  
+  https://www.kaggle.com/datasets/dongrelaxman/amazon-reviews-dataset
+- **Google Play Store Reviews**  
+  https://www.kaggle.com/datasets/prakharrathi25/google-play-store-reviews
+- **Google Play Messenger Reviews (6,000 samples)**  
+  https://www.kaggle.com/datasets/trainingdatapro/6000-messengers-reviews-google-play
+- **Yelp Restaurant Reviews**  
+  https://www.kaggle.com/datasets/farukalam/yelp-restaurant-reviews
+
+These datasets collectively contributed to the **51,718 review records**
+used for training and evaluation.
+"""
+)
 
 st.success("✅ Sentiment Analysis System Ready")
